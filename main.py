@@ -102,6 +102,8 @@ def main():
                 tau = TAU_POOL if pool else TAU_CURVE
                 s0, s1 = (S0_POOL, S1_POOL) if pool else (S0_CURVE, S1_CURVE)
                 mu = last_cap + drift * h * math.exp(-h / tau)
+                if not pool:
+                    mu -= 0.15 * min(1.0, h / 8.0)  # bonding-curve coins fade on average
                 sd = s0 + s1 * math.sqrt(h)
                 draws.append(mu + rng.gauss(0.0, sd))
             for _ in range(GHOSTS):
