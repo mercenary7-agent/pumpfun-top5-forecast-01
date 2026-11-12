@@ -67,8 +67,8 @@ def coin_params(marks):
             t1 = pts[-1][0]
             num, den = 0.0, 0.0
             for i in range(len(pts) - 1):
-                t0, c0 = pts[i]
-                t2, c1 = pts[i + 1]
+                t0, c0 = pts[i][0], pts[i][1]
+                t2, c1 = pts[i + 1][0], pts[i + 1][1]
                 dt = max(1e-6, (t2 - t0) / 3600.0)
                 w = math.exp(-(t1 - t2) / 2700.0)
                 num += w * (c1 - c0) / dt
