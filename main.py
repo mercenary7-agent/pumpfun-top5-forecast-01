@@ -17,14 +17,14 @@ INPUT_DIR = os.environ.get('MAKEFUN_INPUT_DIR', '/input')
 OUTPUT_DIR = os.environ.get('MAKEFUN_OUTPUT_DIR', '/output')
 
 SEED = 20261112
-N_SIMS = 4000          # Monte Carlo samples per answer read
+N_SIMS = 8000          # Monte Carlo samples per answer read
 GHOSTS = 150           # not-yet-born coins modelled at each answer read
 TAU_CURVE = 3.0        # momentum decay (hours) for bonding-curve coins
 TAU_POOL = 10.0        # for graduated (pool) coins
-S0_CURVE, S1_CURVE = 0.25, 0.45   # sd = S0 + S1*sqrt(h)
-S0_POOL, S1_POOL = 0.12, 0.28
+S0_CURVE, S1_CURVE = 0.25, 0.50   # sd = S0 + S1*sqrt(h)
+S0_POOL, S1_POOL = 0.12, 0.32
 DRIFT_CLIP = 2.0
-NAMED_MASS = [0.55, 0.50, 0.50, 0.50, 0.50]  # named share per place; the rest is unnamed (newborns)
+NAMED_MASS = [0.60, 0.55, 0.55, 0.55, 0.55]  # named share per place; the rest is unnamed (newborns)
 P_MIN = 0.0002         # smallest named order probability emitted
 S_MIN = 0.000001       # smallest named size probability emitted
 
@@ -87,7 +87,7 @@ def main():
 
     # ghost (not-yet-born) coins: model the launch flow reaching the chart
     last_caps = sorted((v[0] for v in coins.values()), reverse=True)
-    ghost_mu = last_caps[29] if len(last_caps) > 30 else (last_caps[-1] if last_caps else 2.0)
+    ghost_mu = last_caps[39] if len(last_caps) > 40 else (last_caps[-1] if last_caps else 2.0)
     ghost_sd = 1.0
 
     rng = random.Random(SEED)
@@ -109,7 +109,7 @@ def main():
                 sd = s0 + s1 * math.sqrt(h)
                 d = mu + rng.gauss(0.0, sd)
                 draws.append(d)
-                kdraws.append(last_cap + drift * h * 0.7 + rng.gauss(0.0, sd))  # size path: less damped
+                kdraws.append(last_cap + drift * h * 0.85 + rng.gauss(0.0, sd))  # size path: less damped
             for _ in range(GHOSTS):
                 draws.append(ghost_mu + rng.gauss(0.0, ghost_sd))
             order = sorted(range(len(draws)), key=lambda i: -draws[i])
