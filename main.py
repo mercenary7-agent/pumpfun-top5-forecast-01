@@ -21,11 +21,11 @@ N_SIMS = 4000          # Monte Carlo samples per answer read
 GHOSTS = 150           # not-yet-born coins modelled at each answer read
 TAU_CURVE = 3.0        # momentum decay (hours) for bonding-curve coins
 TAU_POOL = 10.0        # for graduated (pool) coins
-S0_CURVE, S1_CURVE = 0.20, 0.35   # sd = S0 + S1*sqrt(h)
-S0_POOL, S1_POOL = 0.10, 0.22
+S0_CURVE, S1_CURVE = 0.25, 0.45   # sd = S0 + S1*sqrt(h)
+S0_POOL, S1_POOL = 0.12, 0.28
 DRIFT_CLIP = 2.0
-NAMED_MASS = [0.50, 0.45, 0.45, 0.45, 0.45]  # named share per place; the rest is unnamed (newborns)
-P_MIN = 0.0005         # smallest named order probability emitted
+NAMED_MASS = [0.55, 0.50, 0.50, 0.50, 0.50]  # named share per place; the rest is unnamed (newborns)
+P_MIN = 0.0002         # smallest named order probability emitted
 S_MIN = 0.000001       # smallest named size probability emitted
 
 
@@ -99,6 +99,7 @@ def main():
     for h in horizons:
         for _ in range(N_SIMS):
             draws = []
+            kdraws = []
             for last_cap, drift, pool in params:
                 tau = TAU_POOL if pool else TAU_CURVE
                 s0, s1 = (S0_POOL, S1_POOL) if pool else (S0_CURVE, S1_CURVE)
@@ -106,17 +107,21 @@ def main():
                 if not pool:
                     mu -= 0.15 * min(1.0, h / 8.0)  # bonding-curve coins fade on average
                 sd = s0 + s1 * math.sqrt(h)
-                draws.append(mu + rng.gauss(0.0, sd))
+                d = mu + rng.gauss(0.0, sd)
+                draws.append(d)
+                kdraws.append(last_cap + drift * h * 0.7 + rng.gauss(0.0, sd))  # size path: less damped
             for _ in range(GHOSTS):
                 draws.append(ghost_mu + rng.gauss(0.0, ghost_sd))
             order = sorted(range(len(draws)), key=lambda i: -draws[i])
+            korder = sorted(kdraws, reverse=True)
             for k in range(places):
                 i = order[k]
-                size = draws[i]
-                b = 0
-                while b < len(edges) and size >= edges[b]:
-                    b += 1
-                size_counts[k][b] += 1.0
+                if k < len(korder):
+                    size = korder[k]
+                    b = 0
+                    while b < len(edges) and size >= edges[b]:
+                        b += 1
+                    size_counts[k][b] += 1.0
                 if i < len(mints):
                     place_counts[k][mints[i]] += 1.0
                     if k == 0:
