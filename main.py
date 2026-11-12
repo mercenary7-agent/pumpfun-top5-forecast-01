@@ -18,12 +18,13 @@ OUTPUT_DIR = os.environ.get('MAKEFUN_OUTPUT_DIR', '/output')
 
 SEED = 20261112
 N_SIMS = 4000          # Monte Carlo samples per answer read
-GHOSTS = 120           # not-yet-born coins modelled at each answer read
+GHOSTS = 150           # not-yet-born coins modelled at each answer read
 TAU_CURVE = 3.0        # momentum decay (hours) for bonding-curve coins
 TAU_POOL = 10.0        # for graduated (pool) coins
-S0_CURVE, S1_CURVE = 0.30, 0.55   # sd = S0 + S1*sqrt(h)
-S0_POOL, S1_POOL = 0.15, 0.32
+S0_CURVE, S1_CURVE = 0.20, 0.35   # sd = S0 + S1*sqrt(h)
+S0_POOL, S1_POOL = 0.10, 0.22
 DRIFT_CLIP = 2.0
+NAMED_MASS = [0.50, 0.45, 0.45, 0.45, 0.45]  # named share per place; the rest is unnamed (newborns)
 P_MIN = 0.0005         # smallest named order probability emitted
 S_MIN = 0.000001       # smallest named size probability emitted
 
@@ -86,8 +87,8 @@ def main():
 
     # ghost (not-yet-born) coins: model the launch flow reaching the chart
     last_caps = sorted((v[0] for v in coins.values()), reverse=True)
-    ghost_mu = last_caps[49] if len(last_caps) > 50 else (last_caps[-1] if last_caps else 2.0)
-    ghost_sd = 0.9
+    ghost_mu = last_caps[29] if len(last_caps) > 30 else (last_caps[-1] if last_caps else 2.0)
+    ghost_sd = 1.0
 
     rng = random.Random(SEED)
     n_reads = len(horizons)
@@ -124,8 +125,11 @@ def main():
     inv = 1.0 / (n_reads * N_SIMS)
     probabilities = []
     for k in range(places):
+        mass = NAMED_MASS[k] if k < len(NAMED_MASS) else 0.45
+        total_p = sum(place_counts[k].values()) * inv
+        scale = (mass / total_p) if total_p > 0 else 0.0
         for m, c in place_counts[k].items():
-            p = c * inv
+            p = c * inv * scale
             if p >= P_MIN:
                 probabilities.append({'mint': m, 'place': k + 1, 'p': round(p, 6)})
     sizes = []
