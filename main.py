@@ -212,6 +212,7 @@ def main():
     for h in horizons:
         for _ in range(N_SIMS):
             draws = []
+            kdraws = []
             for cap, drift, pool, age_h in params:
                 if pool:
                     mu = cap + drift * h * math.exp(-h / 10.0)
@@ -224,21 +225,19 @@ def main():
                                   + 0.05 * min(4.0, age_h) / 4.0)
                     if rng.random() < death_p * min(1.0, h / 2.0):
                         draws.append(0.5)
-                        continue
-                    draws.append(mu + rng.gauss(0.0, sd))
-            for _ in range(n_ghosts):
-                g = ghost_mu + rng.gauss(0.0, ghost_sd)
-                if rng.random() < 0.05:          # rare newborn explosion
-                    g += rng.uniform(0.5, 2.2)
-                draws.append(g)
+                    else:
+                        draws.append(mu + rng.gauss(0.0, sd))
+                kdraws.append(cap + drift * h * 0.85 + rng.gauss(0.0, sd))
             order = sorted(range(len(draws)), key=lambda i: -draws[i])
+            korder = sorted(kdraws, reverse=True)
             for k in range(places):
                 i = order[k]
-                cap_k = draws[i]
-                b = 0
-                while b < len(edges) and cap_k >= edges[b]:
-                    b += 1
-                size_counts[k][b] += 1.0
+                if k < len(korder):
+                    size = korder[k]
+                    b = 0
+                    while b < len(edges) and size >= edges[b]:
+                        b += 1
+                    size_counts[k][b] += 1.0
                 if i < len(mints):
                     place_counts[k][mints[i]] += 1.0
                     if k == 0:
