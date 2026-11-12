@@ -61,12 +61,19 @@ def coin_params(marks):
     for mint, pts in series.items():
         pts.sort(key=lambda x: x[0])
         last_cap, venue, complete = pts[-1][1], pts[-1][2], pts[-1][3]
-        window = pts[-3:]
-        if len(window) >= 2 and window[-1][0] > window[0][0]:
-            dt = (window[-1][0] - window[0][0]) / 3600.0
-            drift = (window[-1][1] - window[0][1]) / dt
-        else:
-            drift = 0.0
+        # exponentially weighted drift over all sightings (half-life 45 min)
+        drift = 0.0
+        if len(pts) >= 2:
+            t1 = pts[-1][0]
+            num, den = 0.0, 0.0
+            for i in range(len(pts) - 1):
+                t0, c0 = pts[i]
+                t2, c1 = pts[i + 1]
+                dt = max(1e-6, (t2 - t0) / 3600.0)
+                w = math.exp(-(t1 - t2) / 2700.0)
+                num += w * (c1 - c0) / dt
+                den += w
+            drift = num / den if den > 0 else 0.0
         drift = max(-DRIFT_CLIP, min(DRIFT_CLIP, drift))
         out[mint] = (last_cap, drift, (venue in ('pool', 'migrating')) or complete)
     return out
@@ -108,6 +115,8 @@ def main():
                     mu -= 0.15 * min(1.0, h / 8.0)  # bonding-curve coins fade on average
                 sd = s0 + s1 * math.sqrt(h)
                 d = mu + rng.gauss(0.0, sd)
+                if not pool and rng.random() < 0.30 * min(1.0, h / 2.0):
+                    d = 0.5  # bonding-curve coin dies: cap collapses
                 draws.append(d)
                 kdraws.append(last_cap + drift * h * 0.85 + rng.gauss(0.0, sd))  # size path: less damped
             for _ in range(GHOSTS):
