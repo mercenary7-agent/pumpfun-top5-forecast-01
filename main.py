@@ -152,61 +152,30 @@ def gauss_bin(lo, hi, mu, sd):
 
 
 def order_stat_sizes(marks, task, horizons):
-    """Per-place size-bin distributions from the per-mark top-k cap series."""
+    """Per-place size-bin distributions from Monte Carlo paths (known coins + ghost
+    newborns), so place caps include post-cut launches. Returns per-place bin lists."""
     places = task['places']
     edges = task['size']['edges']
     nb = len(edges) + 1
-    by_time = sorted(marks, key=lambda m: parse_ts(m['at']))
-    t0 = parse_ts(by_time[0]['at'])
-    series_k = [[] for _ in range(places)]
-    for m in by_time:
-        rows = sorted(m['rows'], key=lambda r: -float(r['market_cap_lamports']))
-        for k in range(min(places, len(rows))):
-            series_k[k].append(((parse_ts(m['at']) - t0) / 3600.0,
-                                log10_sol(rows[k]['market_cap_lamports'])))
-    cut_t = (parse_ts(by_time[-1]['at']) - t0) / 3600.0
-    dists = []
-    for k in range(places):
-        pts = series_k[k]
-        if len(pts) < 3:
-            mu, sd, drift = 3.0, 0.4, 0.0
-        else:
-            drift = ew_drift(pts)
-            drift = max(-0.05, min(0.08, drift))
-            num, den = 0.0, 0.0
-            for t, c in pts:
-                w = math.exp(-(cut_t - t) / 7200.0)
-                num += w * c
-                den += w
-            mu = num / den
-            resid = [c - (mu + drift * (t - cut_t)) for t, c in pts]
-            sd = max(0.08, min(0.5, (sum(r * r for r in resid) / len(resid)) ** 0.5))
-        bins = [0.0] * nb
-        for h in horizons:
-            m_pred = mu + drift * h
-            s = sd + 0.06 * math.sqrt(max(0.0, h))
-            if k == 0:
-                for b in range(nb):
-                    lo = -1e9 if b == 0 else edges[b - 1]
-                    hi = edges[b] if b < len(edges) else 1e9
-                    bins[b] += (1.0 - TAIL_W) * gauss_bin(lo, hi, m_pred, s)
-                tlo, thi = m_pred + 0.3, TAIL_TOP
-                tb = [b for b in range(nb)
-                      if (edges[b] if b < len(edges) else 1e9) > tlo
-                      and (edges[b - 1] if b > 0 else -1e9) < thi]
-                if tb:
-                    for b in tb:
-                        bins[b] += TAIL_W / len(tb)
-            else:
-                for b in range(nb):
-                    lo = -1e9 if b == 0 else edges[b - 1]
-                    hi = edges[b] if b < len(edges) else 1e9
-                    bins[b] += gauss_bin(lo, hi, m_pred, s)
-        n = len(horizons)
-        bins = [max(c / n, S_FLOOR) for c in bins]
-        tot = sum(bins)
-        dists.append([c / tot for c in bins])
-    return dists
+    return None  # replaced by MC sizes in main(); kept for reference
+
+
+def ghost_params(marks, series):
+    """Cap distribution (log10 SOL) of young coins (<2h old) at the last mark, for ghosts."""
+    last_t = parse_ts(marks[-1]['at'])
+    young = []
+    for m, v in series.items():
+        cap, venue, complete, created = v[-1][1], v[-1][2], v[-1][3], v[-1][4]
+        if last_t - created < 7200.0:
+            young.append(cap)
+    if len(young) >= 5:
+        mu = sum(young) / len(young)
+        sd = max(0.3, (sum((c - mu) ** 2 for c in young) / len(young)) ** 0.5)
+    else:
+        caps = sorted((v[-1][1] for v in series.values()), reverse=True)
+        mu = caps[30] if len(caps) > 31 else (caps[-1] if caps else 2.0)
+        sd = 1.0
+    return mu, sd
 
 
 def main():
@@ -232,8 +201,13 @@ def main():
 
     rng = random.Random(SEED)
     n_reads = len(horizons)
+    edges = task['size']['edges']
+    nb = len(edges) + 1
     place_counts = [{m: 0.0 for m in mints} for _ in range(places)]
+    size_counts = [[0.0] * nb for _ in range(places)]
     top5_votes = {m: 0.0 for m in mints}
+    ghost_mu, ghost_sd = ghost_params(marks, series)
+    n_ghosts = 250
 
     for h in horizons:
         for _ in range(N_SIMS):
@@ -252,12 +226,23 @@ def main():
                         draws.append(0.5)
                         continue
                     draws.append(mu + rng.gauss(0.0, sd))
+            for _ in range(n_ghosts):
+                g = ghost_mu + rng.gauss(0.0, ghost_sd)
+                if rng.random() < 0.05:          # rare newborn explosion
+                    g += rng.uniform(0.5, 2.2)
+                draws.append(g)
             order = sorted(range(len(draws)), key=lambda i: -draws[i])
             for k in range(places):
                 i = order[k]
-                place_counts[k][mints[i]] += 1.0
-                if k == 0:
-                    top5_votes[mints[i]] += 1.0
+                cap_k = draws[i]
+                b = 0
+                while b < len(edges) and cap_k >= edges[b]:
+                    b += 1
+                size_counts[k][b] += 1.0
+                if i < len(mints):
+                    place_counts[k][mints[i]] += 1.0
+                    if k == 0:
+                        top5_votes[mints[i]] += 1.0
 
     inv = 1.0 / (n_reads * N_SIMS)
     probabilities = []
@@ -270,10 +255,10 @@ def main():
             if p >= P_MIN:
                 probabilities.append({'mint': m, 'place': k + 1, 'p': round(p, 6)})
 
-    size_dists = order_stat_sizes(marks, task, horizons)
     sizes = []
     for k in range(places):
-        for b, p in enumerate(size_dists[k]):
+        for b, c in enumerate(size_counts[k]):
+            p = c * inv
             if p >= 0.0005:
                 sizes.append({'place': k + 1, 'bin': b,
                               'p': math.floor(p * 1e6) / 1e6})
